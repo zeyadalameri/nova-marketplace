@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "NOVA Marketplace",
+    "slug": "nova-marketplace",
+    "description": "تطبيق NOVA للتسوق على Android وiOS.",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "scheme": "nova",
+    "backgroundColor": "#f3f6f4",
+    "primaryColor": "#12313a",
+    "plugins": [
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true,
+          "faceIDPermission": "السماح لـ NOVA باستخدام Face ID لحماية بيانات الدخول."
+        }
+      ]
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.nova.marketplace"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.nova.marketplace"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}
