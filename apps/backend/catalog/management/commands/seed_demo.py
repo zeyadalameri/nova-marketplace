@@ -15,22 +15,24 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         category_rows = [
-            ("electronics", "الإلكترونيات", "جوالات وصوتيات وأجهزة ذكية", 1),
-            ("computers", "الكمبيوتر والألعاب", "أجهزة وملحقات للعمل واللعب", 2),
-            ("home", "المنزل والإضاءة", "اختيارات تجعل منزلك أجمل", 3),
-            ("kitchen", "المطبخ", "أجهزة عملية لمطبخك اليومي", 4),
-            ("fashion", "الأزياء", "ملابس وإكسسوارات لكل يوم", 5),
-            ("sports", "الرياضة", "مستلزمات الحركة واللياقة", 6),
-            ("travel", "السفر والحقائب", "حقائب وتجهيزات لكل رحلة", 7),
-            ("office", "المكتب والدراسة", "منتجات للعمل والتعلّم", 8),
+            ("electronics", "الإلكترونيات", "Electronics", "جوالات وصوتيات وأجهزة ذكية", "Phones, audio, and smart devices", 1),
+            ("computers", "الكمبيوتر والألعاب", "Computers & Gaming", "أجهزة وملحقات للعمل واللعب", "Devices and accessories for work and play", 2),
+            ("home", "المنزل والإضاءة", "Home & Lighting", "اختيارات تجعل منزلك أجمل", "Selections that make your home better", 3),
+            ("kitchen", "المطبخ", "Kitchen", "أجهزة عملية لمطبخك اليومي", "Practical appliances for your everyday kitchen", 4),
+            ("fashion", "الأزياء", "Fashion", "ملابس وإكسسوارات لكل يوم", "Everyday clothing and accessories", 5),
+            ("sports", "الرياضة", "Sports", "مستلزمات الحركة واللياقة", "Fitness and active-lifestyle essentials", 6),
+            ("travel", "السفر والحقائب", "Travel & Luggage", "حقائب وتجهيزات لكل رحلة", "Bags and essentials for every trip", 7),
+            ("office", "المكتب والدراسة", "Office & Study", "منتجات للعمل والتعلّم", "Products for work and learning", 8),
         ]
         categories = {}
-        for slug, name, description, display_order in category_rows:
+        for slug, name, name_en, description, description_en, display_order in category_rows:
             category, _ = Category.objects.update_or_create(
                 slug=slug,
                 defaults={
                     "name": name,
+                    "name_en": name_en,
                     "description": description,
+                    "description_en": description_en,
                     "display_order": display_order,
                     "is_active": True,
                 },
@@ -38,32 +40,33 @@ class Command(BaseCommand):
             categories[slug] = category
 
         products = [
-            ("electronics", "سماعة لاسلكية عازلة للضوضاء", "wireless-headphones", "NOVA-001", 29900, 18, "NOVA Audio", "صوت محيطي وبطارية تدوم حتى 38 ساعة مع وسائد مريحة."),
-            ("computers", "لوحة مفاتيح ميكانيكية", "mechanical-keyboard", "NOVA-002", 24900, 8, "KeyLab", "مفاتيح هادئة وإضاءة قابلة للتخصيص واتصال سريع."),
-            ("electronics", "ساعة ذكية للياقة", "smart-watch", "NOVA-003", 45900, 10, "NOVA Wear", "تتبع للنشاط والنوم والنبض مع مقاومة للماء."),
-            ("home", "مصباح مكتبي ذكي", "smart-desk-lamp", "NOVA-004", 18900, 16, "Luma", "إضاءة هادئة بثلاث درجات وتحكم لمسي وتصميم عصري."),
-            ("fashion", "قميص قطني مريح", "cotton-shirt", "NOVA-005", 12900, 0, "NOVA Basics", "قطن ناعم بقصة يومية وألوان سهلة التنسيق."),
-            ("travel", "حقيبة سفر صلبة 24 بوصة", "travel-suitcase", "NOVA-006", 38900, 7, "Nomad", "هيكل خفيف وعجلات مرنة وقفل رقمي لرحلة أكثر راحة."),
-            ("computers", "لابتوب خفيف 14 بوصة", "compact-laptop", "NOVA-007", 279900, 9, "Orbit", "شاشة واضحة وأداء سريع للدراسة والعمل اليومي بوزن خفيف."),
-            ("sports", "حذاء جري يومي", "running-shoes", "NOVA-008", 23900, 21, "Stride", "بطانة مرنة وتهوية ممتازة للمشي والتمارين اليومية."),
-            ("kitchen", "آلة إسبريسو منزلية", "espresso-machine", "NOVA-009", 64900, 6, "Brewly", "قهوة غنية خلال دقائق مع عصا تبخير وحجم مناسب للمطبخ."),
-            ("electronics", "هاتف NOVA X بشاشة OLED", "nova-phone-x", "NOVA-010", 219900, 14, "NOVA Mobile", "شاشة OLED وكاميرا ذكية وبطارية ليوم كامل."),
-            ("kitchen", "قلاية هوائية رقمية", "air-fryer", "NOVA-011", 32900, 13, "Culina", "طهي أسرع بزيت أقل وسعة مناسبة للعائلة."),
-            ("office", "حقيبة ظهر للعمل والدراسة", "city-backpack", "NOVA-012", 17900, 17, "Carry", "جيوب منظمة ومساحة للابتوب مع أحزمة مريحة."),
-            ("electronics", "سماعات أذن لاسلكية", "wireless-earbuds", "NOVA-013", 19900, 26, "NOVA Audio", "حجم صغير وصوت واضح ومقاومة لرذاذ الماء."),
-            ("computers", "جهاز لوحي 11 بوصة", "nova-tablet", "NOVA-014", 129900, 11, "Orbit", "شاشة واسعة للترفيه والدراسة مع بطارية طويلة."),
-            ("home", "مصباح جانبي هادئ", "ambient-table-lamp", "NOVA-015", 14900, 23, "Luma", "إضاءة دافئة وتصميم بسيط يناسب غرفة النوم والمجلس."),
-            ("sports", "حذاء تدريب خفيف", "training-shoes", "NOVA-016", 26900, 12, "Stride", "ثبات ومرونة للتمارين والنشاط اليومي."),
-            ("travel", "حقيبة ظهر للسفر الخفيف", "travel-backpack", "NOVA-017", 22900, 5, "Nomad", "سعة عملية وتنظيم داخلي للرحلات القصيرة."),
-            ("office", "لوحة مفاتيح مكتبية صغيرة", "compact-keyboard", "NOVA-018", 16900, 19, "KeyLab", "تصميم مدمج يوفر المساحة مع اتصال لاسلكي موثوق."),
+            ("electronics", "سماعة لاسلكية عازلة للضوضاء", "Noise-Cancelling Wireless Headphones", "wireless-headphones", "NOVA-001", 29900, 18, "NOVA Audio", "صوت محيطي وبطارية تدوم حتى 38 ساعة مع وسائد مريحة.", "Immersive sound, up to 38 hours of battery life, and comfortable ear cushions."),
+            ("computers", "لوحة مفاتيح ميكانيكية", "Mechanical Keyboard", "mechanical-keyboard", "NOVA-002", 24900, 8, "KeyLab", "مفاتيح هادئة وإضاءة قابلة للتخصيص واتصال سريع.", "Quiet switches, customizable lighting, and a responsive connection."),
+            ("electronics", "ساعة ذكية للياقة", "Fitness Smartwatch", "smart-watch", "NOVA-003", 45900, 10, "NOVA Wear", "تتبع للنشاط والنوم والنبض مع مقاومة للماء.", "Activity, sleep, and heart-rate tracking with water resistance."),
+            ("home", "مصباح مكتبي ذكي", "Smart Desk Lamp", "smart-desk-lamp", "NOVA-004", 18900, 16, "Luma", "إضاءة هادئة بثلاث درجات وتحكم لمسي وتصميم عصري.", "Three comfortable light levels, touch controls, and a modern design."),
+            ("fashion", "قميص قطني مريح", "Comfortable Cotton Shirt", "cotton-shirt", "NOVA-005", 12900, 0, "NOVA Basics", "قطن ناعم بقصة يومية وألوان سهلة التنسيق.", "Soft cotton, an everyday fit, and easy-to-match colors."),
+            ("travel", "حقيبة سفر صلبة 24 بوصة", "24-inch Hardshell Suitcase", "travel-suitcase", "NOVA-006", 38900, 7, "Nomad", "هيكل خفيف وعجلات مرنة وقفل رقمي لرحلة أكثر راحة.", "A lightweight shell, smooth wheels, and a digital lock for easier travel."),
+            ("computers", "لابتوب خفيف 14 بوصة", "Lightweight 14-inch Laptop", "compact-laptop", "NOVA-007", 279900, 9, "Orbit", "شاشة واضحة وأداء سريع للدراسة والعمل اليومي بوزن خفيف.", "A crisp display and fast everyday performance in a lightweight design."),
+            ("sports", "حذاء جري يومي", "Everyday Running Shoes", "running-shoes", "NOVA-008", 23900, 21, "Stride", "بطانة مرنة وتهوية ممتازة للمشي والتمارين اليومية.", "Flexible cushioning and excellent ventilation for walking and daily exercise."),
+            ("kitchen", "آلة إسبريسو منزلية", "Home Espresso Machine", "espresso-machine", "NOVA-009", 64900, 6, "Brewly", "قهوة غنية خلال دقائق مع عصا تبخير وحجم مناسب للمطبخ.", "Rich coffee in minutes with a steam wand and a kitchen-friendly footprint."),
+            ("electronics", "هاتف NOVA X بشاشة OLED", "NOVA X OLED Smartphone", "nova-phone-x", "NOVA-010", 219900, 14, "NOVA Mobile", "شاشة OLED وكاميرا ذكية وبطارية ليوم كامل.", "An OLED display, smart camera, and all-day battery life."),
+            ("kitchen", "قلاية هوائية رقمية", "Digital Air Fryer", "air-fryer", "NOVA-011", 32900, 13, "Culina", "طهي أسرع بزيت أقل وسعة مناسبة للعائلة.", "Faster cooking with less oil and a family-friendly capacity."),
+            ("office", "حقيبة ظهر للعمل والدراسة", "Work and Study Backpack", "city-backpack", "NOVA-012", 17900, 17, "Carry", "جيوب منظمة ومساحة للابتوب مع أحزمة مريحة.", "Organized pockets, a laptop compartment, and comfortable straps."),
+            ("electronics", "سماعات أذن لاسلكية", "Wireless Earbuds", "wireless-earbuds", "NOVA-013", 19900, 26, "NOVA Audio", "حجم صغير وصوت واضح ومقاومة لرذاذ الماء.", "A compact fit, clear sound, and splash resistance."),
+            ("computers", "جهاز لوحي 11 بوصة", "11-inch Tablet", "nova-tablet", "NOVA-014", 129900, 11, "Orbit", "شاشة واسعة للترفيه والدراسة مع بطارية طويلة.", "A spacious display for entertainment and study with long battery life."),
+            ("home", "مصباح جانبي هادئ", "Ambient Table Lamp", "ambient-table-lamp", "NOVA-015", 14900, 23, "Luma", "إضاءة دافئة وتصميم بسيط يناسب غرفة النوم والمجلس.", "Warm lighting and a simple design for bedrooms and living spaces."),
+            ("sports", "حذاء تدريب خفيف", "Lightweight Training Shoes", "training-shoes", "NOVA-016", 26900, 12, "Stride", "ثبات ومرونة للتمارين والنشاط اليومي.", "Stable and flexible support for workouts and daily activity."),
+            ("travel", "حقيبة ظهر للسفر الخفيف", "Lightweight Travel Backpack", "travel-backpack", "NOVA-017", 22900, 5, "Nomad", "سعة عملية وتنظيم داخلي للرحلات القصيرة.", "Practical capacity and internal organization for short trips."),
+            ("office", "لوحة مفاتيح مكتبية صغيرة", "Compact Office Keyboard", "compact-keyboard", "NOVA-018", 16900, 19, "KeyLab", "تصميم مدمج يوفر المساحة مع اتصال لاسلكي موثوق.", "A space-saving compact design with a reliable wireless connection."),
         ]
         seeded = {}
-        for category_slug, name, slug, sku, price_cents, stock, brand, description in products:
+        for category_slug, name, name_en, slug, sku, price_cents, stock, brand, description, description_en in products:
             product, _ = Product.objects.update_or_create(
                 sku=sku,
                 defaults={
                     "category": categories[category_slug],
                     "name": name,
+                    "name_en": name_en,
                     "slug": slug,
                     "price_cents": price_cents,
                     "stock": stock,
@@ -71,6 +74,7 @@ class Command(BaseCommand):
                     "reorder_quantity": 24,
                     "brand": brand,
                     "description": description,
+                    "description_en": description_en,
                     "is_active": True,
                     "is_featured": sku in {"NOVA-001", "NOVA-006", "NOVA-007", "NOVA-009", "NOVA-010", "NOVA-011"},
                 },
@@ -84,6 +88,7 @@ class Command(BaseCommand):
                 defaults={
                     "product": shirt,
                     "name": f"المقاس {size}",
+                    "name_en": f"Size {size}",
                     "attributes": {"size": size, "color": "أبيض"},
                     "stock": stock,
                     "low_stock_threshold": 5 if size == "XL" else 3,

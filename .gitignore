@@ -21,3 +21,5 @@ dist/
 backups/
 media/
 staticfiles/
+.codex-remote-attachments/
+inst_user_settings.tmp

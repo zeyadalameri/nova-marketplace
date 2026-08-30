@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 
 import { apiRequest } from "@/lib/client-api";
+import { translate, type Language, type TranslationKey } from "@/lib/i18n";
 import type { Cart, Product, User } from "@/lib/types";
 
 type StoreContextValue = {
@@ -10,7 +11,8 @@ type StoreContextValue = {
   cart: Cart | null;
   favorites: Map<number, number>;
   sessionLoading: boolean;
-  language: "ar" | "en";
+  language: Language;
+  t: (key: TranslationKey) => string;
   currency: "SAR" | "USD" | "AED";
   login: (username: string, password: string) => Promise<void>;
   register: (data: Record<string, string>) => Promise<void>;
@@ -22,7 +24,7 @@ type StoreContextValue = {
   applyCoupon: (code: string) => Promise<void>;
   removeCoupon: () => Promise<void>;
   toggleFavorite: (product: Product) => Promise<void>;
-  setLanguage: (language: "ar" | "en") => void;
+  setLanguage: (language: Language) => void;
   setCurrency: (currency: "SAR" | "USD" | "AED") => void;
 };
 
@@ -33,7 +35,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [cart, setCart] = useState<Cart | null>(null);
   const [favorites, setFavorites] = useState(new Map<number, number>());
   const [sessionLoading, setSessionLoading] = useState(true);
-  const [language, updateLanguage] = useState<"ar" | "en">("ar");
+  const [language, updateLanguage] = useState<Language>("ar");
   const [currency, updateCurrency] = useState<"SAR" | "USD" | "AED">("SAR");
 
   const refreshCart = useCallback(async () => {
@@ -57,7 +59,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const savedLanguage = localStorage.getItem("nova_language");
     const savedCurrency = localStorage.getItem("nova_currency");
-    if (savedLanguage === "ar" || savedLanguage === "en") updateLanguage(savedLanguage);
+    if (savedLanguage === "ar" || savedLanguage === "en") {
+      updateLanguage(savedLanguage);
+      document.documentElement.lang = savedLanguage;
+      document.documentElement.dir = savedLanguage === "ar" ? "rtl" : "ltr";
+    }
     if (savedCurrency === "SAR" || savedCurrency === "USD" || savedCurrency === "AED") updateCurrency(savedCurrency);
     fetch("/api/auth/session")
       .then((response) => response.json())
@@ -80,7 +86,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       body: JSON.stringify({ username, password }),
     });
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.detail ?? "تعذر تسجيل الدخول");
+    if (!response.ok) throw new Error(payload.detail ?? (language === "en" ? "Could not sign in" : "تعذر تسجيل الدخول"));
     setUser(payload.user);
   }
 
@@ -101,7 +107,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function addToCart(product: Product, quantity = 1, variantId?: number | null) {
-    if (!user) throw new Error("سجّل الدخول لإضافة المنتجات إلى السلة.");
+    if (!user) throw new Error(language === "en" ? "Sign in to add products to your cart." : "سجّل الدخول لإضافة المنتجات إلى السلة.");
     const payload: Record<string, number> = { product_id: product.id, quantity };
     if (variantId) payload.variant_id = variantId;
     setCart(await apiRequest<Cart>("/cart/items/", { method: "POST", body: JSON.stringify(payload) }));
@@ -125,7 +131,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function toggleFavorite(product: Product) {
-    if (!user) throw new Error("سجّل الدخول لاستخدام المفضلة.");
+    if (!user) throw new Error(language === "en" ? "Sign in to use favorites." : "سجّل الدخول لاستخدام المفضلة.");
     const favoriteId = favorites.get(product.id);
     if (favoriteId) {
       await apiRequest(`/favorites/${favoriteId}/`, { method: "DELETE" });
@@ -135,19 +141,20 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     await refreshFavorites();
   }
 
-  const setLanguage = (value: "ar" | "en") => {
+  const setLanguage = (value: Language) => {
     updateLanguage(value);
     localStorage.setItem("nova_language", value);
     document.documentElement.lang = value;
     document.documentElement.dir = value === "ar" ? "rtl" : "ltr";
   };
+  const t = (key: TranslationKey) => translate(language, key);
   const setCurrency = (value: "SAR" | "USD" | "AED") => {
     updateCurrency(value);
     localStorage.setItem("nova_currency", value);
   };
 
   const value = {
-    user, cart, favorites, sessionLoading, language, currency, login, register, logout,
+    user, cart, favorites, sessionLoading, language, currency, t, login, register, logout,
     refreshCart, addToCart, updateCartItem, removeCartItem, applyCoupon, removeCoupon,
     toggleFavorite, setLanguage, setCurrency,
   };

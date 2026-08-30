@@ -6,8 +6,10 @@ from django.utils.text import slugify
 
 class Category(models.Model):
     name = models.CharField(max_length=100, unique=True)
+    name_en = models.CharField(max_length=100, blank=True)
     slug = models.SlugField(max_length=120, unique=True)
     description = models.CharField(max_length=220, blank=True)
+    description_en = models.CharField(max_length=220, blank=True)
     image_url = models.URLField(max_length=500, blank=True)
     is_active = models.BooleanField(default=True)
     display_order = models.PositiveIntegerField(default=0)
@@ -28,10 +30,12 @@ class Category(models.Model):
 class Product(models.Model):
     category = models.ForeignKey(Category, related_name="products", on_delete=models.PROTECT)
     name = models.CharField(max_length=150)
+    name_en = models.CharField(max_length=150, blank=True)
     slug = models.SlugField(max_length=180, unique=True)
     brand = models.CharField(max_length=100, blank=True)
     sku = models.CharField(max_length=60, unique=True)
     description = models.TextField(blank=True)
+    description_en = models.TextField(blank=True)
     price_cents = models.PositiveBigIntegerField()
     currency = models.CharField(max_length=3, default="SAR")
     stock = models.PositiveIntegerField(default=0)
@@ -81,6 +85,7 @@ class Product(models.Model):
 class ProductVariant(models.Model):
     product = models.ForeignKey(Product, related_name="variants", on_delete=models.CASCADE)
     name = models.CharField(max_length=120)
+    name_en = models.CharField(max_length=120, blank=True)
     sku = models.CharField(max_length=80, unique=True)
     attributes = models.JSONField(default=dict, blank=True)
     price_delta_cents = models.IntegerField(default=0)

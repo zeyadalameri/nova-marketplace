@@ -1,8 +1,10 @@
 export type Category = {
   id: number;
   name: string;
+  name_en: string;
   slug: string;
   description: string;
+  description_en: string;
   image_url: string;
   display_order: number;
 };
@@ -10,10 +12,12 @@ export type Category = {
 export type Product = {
   id: number;
   name: string;
+  name_en: string;
   slug: string;
   brand: string;
   sku: string;
   description: string;
+  description_en: string;
   price_cents: number;
   price: string;
   currency: string;

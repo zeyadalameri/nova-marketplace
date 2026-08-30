@@ -6,7 +6,7 @@ from .models import Category, Favorite, Product, ProductImage, ProductVariant, R
 class ProductVariantInline(admin.TabularInline):
     model = ProductVariant
     extra = 0
-    fields = ("name", "sku", "attributes", "price_delta_cents", "stock", "low_stock_threshold", "reorder_quantity", "is_active")
+    fields = ("name", "name_en", "sku", "attributes", "price_delta_cents", "stock", "low_stock_threshold", "reorder_quantity", "is_active")
 
 
 class ProductImageInline(admin.TabularInline):
@@ -16,17 +16,17 @@ class ProductImageInline(admin.TabularInline):
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
-    list_display = ("name", "slug", "is_active", "display_order")
+    list_display = ("name", "name_en", "slug", "is_active", "display_order")
     list_filter = ("is_active",)
-    search_fields = ("name", "slug")
+    search_fields = ("name", "name_en", "slug")
     prepopulated_fields = {"slug": ("name",)}
 
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ("name", "sku", "category", "price_cents", "stock", "low_stock_threshold", "is_active", "is_featured")
+    list_display = ("name", "name_en", "sku", "category", "price_cents", "stock", "low_stock_threshold", "is_active", "is_featured")
     list_filter = ("is_active", "is_featured", "category")
-    search_fields = ("name", "sku", "brand")
+    search_fields = ("name", "name_en", "sku", "brand")
     prepopulated_fields = {"slug": ("name",)}
     inlines = [ProductVariantInline, ProductImageInline]
 

@@ -11,7 +11,7 @@ from .models import Category, Favorite, Product, ProductImage, ProductVariant, R
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
-        fields = ["id", "name", "slug", "description", "image_url", "display_order"]
+        fields = ["id", "name", "name_en", "slug", "description", "description_en", "image_url", "display_order"]
 
 
 class ProductVariantSerializer(serializers.ModelSerializer):
@@ -25,6 +25,7 @@ class ProductVariantSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "name",
+            "name_en",
             "sku",
             "attributes",
             "price_delta_cents",
@@ -79,10 +80,12 @@ class ProductSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "name",
+            "name_en",
             "slug",
             "brand",
             "sku",
             "description",
+            "description_en",
             "price_cents",
             "price",
             "currency",

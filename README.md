@@ -9,6 +9,18 @@
 
 تم حذف مشروع Flask القديم بالكامل. المشروع الحالي يعتمد فقط على Django وNext.js وExpo.
 
+## لقطات من المشروع
+
+### واجهة الويب
+
+![واجهة NOVA Marketplace على الويب](docs/screenshots/web-home.png)
+
+### تطبيق Android
+
+<p align="center">
+  <img src="docs/screenshots/mobile-home.png" width="320" alt="تطبيق NOVA Marketplace على Android" />
+</p>
+
 ## ما يعمل الآن
 
 - التسجيل والدخول وتجديد الجلسة؛ الويب يستخدم Cookies من نوع HttpOnly والجوال يحفظ الرموز في SecureStore.
@@ -99,6 +111,24 @@ npm.cmd run dev
 افتح `http://127.0.0.1:3000`، وأنشئ حسابًا جديدًا. رمز الخصم التجريبي هو `WELCOME10`، والدفع بالبطاقة يعرض زرًا محليًا لمحاكاة Webhook الناجح.
 
 ### 3. تطبيق Android وiOS
+
+#### التشغيل التلقائي على Android Studio (Windows)
+
+بعد إعداد الجهاز مرة واحدة، شغّل الملف التالي من مجلد المشروع:
+
+```cmd
+start_android.cmd
+```
+
+الملف يشغّل Django، ويفتح محاكي `NOVA_API_36`، وينتظر اكتمال إقلاع Android، ثم يفتح مشروع `apps\mobile\android` في Android Studio ويبني التطبيق ويثبته. اترك نافذة Django ونافذة Expo مفتوحتين أثناء استخدام التطبيق. للإيقاف اضغط `Ctrl+C` في نافذتي الخادم وExpo ثم أغلق المحاكي.
+
+الإعداد المحلي الحالي يستخدم Android Studio Quail 3 Patch 1 وJDK 17 وAndroid SDK API 36 وBuild Tools 36.0.0، ويتصل التطبيق من المحاكي بالباك إند عبر:
+
+```dotenv
+EXPO_PUBLIC_API_URL=http://10.0.2.2:8000/api/v1
+```
+
+#### التشغيل اليدوي
 
 في نافذة PowerShell ثالثة:
 
