@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { clearTokenCookies, djangoFetch, setTokenCookies } from "@/lib/server-auth";
+import { djangoFetch, refreshTokenPair, setTokenCookies } from "@/lib/server-auth";
 
 export async function GET(request: NextRequest) {
   let access = request.cookies.get("nova_access")?.value;
@@ -14,13 +14,8 @@ export async function GET(request: NextRequest) {
     : null;
   let refreshed: { access: string; refresh?: string } | null = null;
   if ((!meResponse || meResponse.status === 401) && refresh) {
-    const refreshResponse = await djangoFetch("/auth/token/refresh/", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh }),
-    });
-    if (refreshResponse.ok) {
-      refreshed = await refreshResponse.json();
+    refreshed = await refreshTokenPair(refresh);
+    if (refreshed) {
       access = refreshed!.access;
       meResponse = await djangoFetch("/auth/me/", {
         headers: { Authorization: `Bearer ${access}` },
@@ -28,9 +23,9 @@ export async function GET(request: NextRequest) {
     }
   }
   if (!meResponse?.ok) {
-    const response = NextResponse.json({ user: null });
-    clearTokenCookies(response);
-    return response;
+    // Do not clear cookies from a stale failed request; a newer login/refresh may already
+    // have replaced them in another response. Explicit logout remains responsible for clearing.
+    return NextResponse.json({ user: null });
   }
   const response = NextResponse.json({ user: await meResponse.json() });
   if (refreshed) setTokenCookies(response, refreshed);

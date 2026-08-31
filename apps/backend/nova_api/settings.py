@@ -1,8 +1,10 @@
 import os
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -16,10 +18,58 @@ def env_list(name: str, default: str = "") -> list[str]:
     return [value.strip() for value in os.environ.get(name, default).split(",") if value.strip()]
 
 
+ENVIRONMENT = os.environ.get("DJANGO_ENV", "development").strip().lower()
+IS_PRODUCTION = ENVIRONMENT == "production"
+DEBUG = env_bool("DJANGO_DEBUG", not IS_PRODUCTION)
+
+if IS_PRODUCTION:
+    required_settings = [
+        "DJANGO_SECRET_KEY",
+        "DJANGO_ALLOWED_HOSTS",
+        "DATABASE_URL",
+        "PAYMENT_WEBHOOK_SECRET",
+    ]
+    missing_settings = [name for name in required_settings if not os.environ.get(name, "").strip()]
+    if missing_settings:
+        raise ImproperlyConfigured(
+            "Production configuration is missing required environment variables: "
+            + ", ".join(missing_settings)
+        )
+    if DEBUG:
+        raise ImproperlyConfigured("DJANGO_DEBUG must be disabled when DJANGO_ENV=production.")
+    unsafe_markers = {"change", "replace", "generate", "dev-only", "local-password"}
+    secret_values = {
+        "DJANGO_SECRET_KEY": os.environ["DJANGO_SECRET_KEY"],
+        "PAYMENT_WEBHOOK_SECRET": os.environ["PAYMENT_WEBHOOK_SECRET"],
+    }
+    weak_secrets = [
+        name
+        for name, value in secret_values.items()
+        if len(value) < 32 or any(marker in value.lower() for marker in unsafe_markers)
+    ]
+    if weak_secrets:
+        raise ImproperlyConfigured(
+            "Production secrets must be strong, non-placeholder values: " + ", ".join(weak_secrets)
+        )
+    database_url = os.environ["DATABASE_URL"]
+    parsed_database_url = urlsplit(database_url)
+    database_password = unquote(parsed_database_url.password or "")
+    database_unsafe_markers = unsafe_markers | {"password"}
+    if (
+        parsed_database_url.scheme not in {"postgres", "postgresql"}
+        or not parsed_database_url.username
+        or not parsed_database_url.hostname
+        or len(database_password) < 12
+        or any(marker in database_password.lower() for marker in database_unsafe_markers)
+    ):
+        raise ImproperlyConfigured(
+            "Production DATABASE_URL must use PostgreSQL with a non-placeholder password "
+            "of at least 12 characters."
+        )
+
 SECRET_KEY = os.environ.get(
     "DJANGO_SECRET_KEY", "dev-only-change-this-secret-key-before-production-2026"
 )
-DEBUG = env_bool("DJANGO_DEBUG", True)
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost,testserver")
 
 INSTALLED_APPS = [
@@ -157,6 +207,9 @@ SUPPORTED_CURRENCIES = env_list("SUPPORTED_CURRENCIES", "SAR,USD,AED")
 SUPPORTED_LANGUAGES = env_list("SUPPORTED_LANGUAGES", "ar,en")
 PAYMENT_PROVIDER = os.environ.get("PAYMENT_PROVIDER", "sandbox")
 PAYMENT_WEBHOOK_SECRET = os.environ.get("PAYMENT_WEBHOOK_SECRET", "local-sandbox-webhook-secret")
+PAYMENT_RESERVATION_MINUTES = max(
+    5, int(os.environ.get("PAYMENT_RESERVATION_MINUTES", "30"))
+)
 SHIPPING_PROVIDER = os.environ.get("SHIPPING_PROVIDER", "sandbox")
 PUBLIC_STORE_URL = os.environ.get("PUBLIC_STORE_URL", "http://localhost:3000")
 INVENTORY_EXPIRY_WARNING_DAYS = int(os.environ.get("INVENTORY_EXPIRY_WARNING_DAYS", "30"))

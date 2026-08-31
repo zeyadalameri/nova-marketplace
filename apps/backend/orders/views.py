@@ -4,15 +4,14 @@ from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from catalog.models import Product
-from catalog.models import ProductVariant
 from commerce.models import Payment, Shipment
 from commerce.serializers import PaymentSerializer, ShipmentSerializer
 from commerce.services import create_notification, initiate_payment
-from inventory.services import record_order_cancellation, scan_inventory
+from inventory.services import scan_inventory
 
 from .models import Order
 from .serializers import OrderCreateSerializer, OrderSerializer
+from .services import release_expired_order, restore_order_inventory
 
 
 class OrderViewSet(viewsets.ModelViewSet):
@@ -60,42 +59,22 @@ class OrderViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        product_ids = [item.product_id for item in order.items.all() if item.product_id]
-        products = {
-            product.id: product
-            for product in Product.objects.select_for_update().filter(id__in=product_ids)
-        }
-        variant_ids = [item.variant_id for item in order.items.all() if item.variant_id]
-        variants = {
-            variant.id: variant
-            for variant in ProductVariant.objects.select_for_update().filter(id__in=variant_ids)
-        }
-        for item in order.items.all():
-            variant = variants.get(item.variant_id)
-            product = products.get(item.product_id)
-            if variant:
-                variant.stock += item.quantity
-                variant.save(update_fields=["stock", "updated_at"])
-            elif product:
-                product.stock += item.quantity
-                product.save(update_fields=["stock", "updated_at"])
-            if variant or product:
-                record_order_cancellation(
-                    order=order,
-                    product=product or variant.product,
-                    variant=variant,
-                    quantity=item.quantity,
-                    stock_after=variant.stock if variant else product.stock,
-                    actor=request.user,
-                )
+        restore_order_inventory(order, actor=request.user)
         order.status = Order.Status.CANCELLED
         if order.payment_status == Order.PaymentStatus.PAID:
             order.payment_status = Order.PaymentStatus.REFUNDED
             Payment.objects.filter(order=order, status=Payment.Status.PAID).update(
                 status=Payment.Status.REFUNDED
             )
+        elif order.payment_status == Order.PaymentStatus.PENDING:
+            order.payment_status = Order.PaymentStatus.FAILED
+            Payment.objects.filter(
+                order=order, status__in=[Payment.Status.CREATED, Payment.Status.PENDING]
+            ).update(status=Payment.Status.FAILED)
         Shipment.objects.filter(order=order).update(status=Shipment.Status.CANCELLED)
-        order.save(update_fields=["status", "payment_status", "updated_at"])
+        order.save(
+            update_fields=["status", "payment_status", "inventory_released_at", "updated_at"]
+        )
         transaction.on_commit(
             lambda: create_notification(
                 order.user,
@@ -114,6 +93,11 @@ class OrderViewSet(viewsets.ModelViewSet):
         if order.payment_method != Order.PaymentMethod.CARD:
             return Response(
                 {"detail": "الطلب لا يستخدم الدفع الإلكتروني."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if release_expired_order(order.pk):
+            return Response(
+                {"detail": "انتهت مهلة حجز المخزون وأُلغي الطلب."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         key = request.headers.get("Idempotency-Key") or request.data.get("idempotency_key")

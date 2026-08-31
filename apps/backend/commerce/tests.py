@@ -50,14 +50,31 @@ class CommerceFlowTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         return Order.objects.get(public_id=response.data["public_id"])
 
-    def test_card_payment_confirmation_is_idempotent_and_creates_shipment(self):
-        order = self.create_card_order()
-        response = self.client.post(
+    def initiate(self, order, key="checkout-payment-1"):
+        return self.client.post(
             reverse("order-initiate-payment", args=[order.public_id]),
             {},
             format="json",
-            HTTP_IDEMPOTENCY_KEY="checkout-payment-1",
+            HTTP_IDEMPOTENCY_KEY=key,
         )
+
+    def signed_webhook(self, payload):
+        raw = json.dumps(payload, separators=(",", ":")).encode()
+        signature = hmac.new(
+            settings.PAYMENT_WEBHOOK_SECRET.encode(), raw, hashlib.sha256
+        ).hexdigest()
+        self.client.force_authenticate(user=None)
+        return self.client.generic(
+            "POST",
+            reverse("payment-webhook"),
+            raw,
+            content_type="application/json",
+            HTTP_X_NOVA_SIGNATURE=signature,
+        )
+
+    def test_card_payment_confirmation_is_idempotent_and_creates_shipment(self):
+        order = self.create_card_order()
+        response = self.initiate(order)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         payment_id = response.data["public_id"]
 
@@ -76,6 +93,50 @@ class CommerceFlowTests(APITestCase):
         )
         self.assertEqual(repeat.status_code, status.HTTP_200_OK)
         self.assertEqual(Payment.objects.filter(order=order).count(), 1)
+        self.assertEqual(Shipment.objects.filter(order=order).count(), 1)
+
+    def test_duplicate_payment_attempt_returns_the_existing_payment(self):
+        order = self.create_card_order()
+        first = self.initiate(order, "payment-attempt-1")
+        second = self.initiate(order, "payment-attempt-2")
+
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(second.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(first.data["public_id"], second.data["public_id"])
+        self.assertEqual(Payment.objects.filter(order=order).count(), 1)
+
+    def test_payment_cannot_start_or_complete_after_cancellation(self):
+        order = self.create_card_order()
+        initiated = self.initiate(order, "cancelled-payment")
+        payment_id = initiated.data["public_id"]
+
+        cancellation = self.client.post(reverse("order-cancel", args=[order.public_id]))
+        self.assertEqual(cancellation.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            self.initiate(order, "cancelled-payment-retry").status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+        confirmation = self.client.post(
+            reverse("payment-sandbox-confirm", args=[payment_id]), {}, format="json"
+        )
+        self.assertEqual(confirmation.status_code, status.HTTP_400_BAD_REQUEST)
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.CANCELLED)
+        self.assertEqual(order.payment_status, Order.PaymentStatus.FAILED)
+
+    def test_payment_cannot_start_again_after_order_is_paid(self):
+        order = self.create_card_order()
+        initiated = self.initiate(order, "paid-payment")
+        confirmation = self.client.post(
+            reverse("payment-sandbox-confirm", args=[initiated.data["public_id"]]),
+            {},
+            format="json",
+        )
+        self.assertEqual(confirmation.status_code, status.HTTP_200_OK)
+
+        retry = self.initiate(order, "paid-payment-retry")
+        self.assertEqual(retry.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Payment.objects.filter(order=order).count(), 1)
 
     def test_webhook_rejects_invalid_signature(self):
         self.client.force_authenticate(user=None)
@@ -89,36 +150,45 @@ class CommerceFlowTests(APITestCase):
 
     def test_signed_webhook_is_processed_once(self):
         order = self.create_card_order()
-        initiated = self.client.post(
-            reverse("order-initiate-payment", args=[order.public_id]),
-            {},
-            format="json",
-            HTTP_IDEMPOTENCY_KEY="webhook-payment-1",
-        )
+        initiated = self.initiate(order, "webhook-payment-1")
         payment_id = initiated.data["public_id"]
-        payload = {"event_id": "evt-100", "payment_id": str(payment_id), "type": "payment.succeeded"}
-        raw = json.dumps(payload, separators=(",", ":")).encode()
-        signature = hmac.new(
-            settings.PAYMENT_WEBHOOK_SECRET.encode(), raw, hashlib.sha256
-        ).hexdigest()
-        self.client.force_authenticate(user=None)
-        response = self.client.generic(
-            "POST",
-            reverse("payment-webhook"),
-            raw,
-            content_type="application/json",
-            HTTP_X_NOVA_SIGNATURE=signature,
-        )
+        payload = {
+            "event_id": "evt-100",
+            "payment_id": str(payment_id),
+            "type": "payment.succeeded",
+            "amount_cents": initiated.data["amount_cents"],
+            "currency": initiated.data["currency"],
+        }
+        response = self.signed_webhook(payload)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        response = self.client.generic(
-            "POST",
-            reverse("payment-webhook"),
-            raw,
-            content_type="application/json",
-            HTTP_X_NOVA_SIGNATURE=signature,
-        )
+        response = self.signed_webhook(payload)
         self.assertFalse(response.data["processed"])
         self.assertEqual(WebhookEvent.objects.filter(event_id="evt-100").count(), 1)
+        self.assertEqual(Shipment.objects.filter(order=order).count(), 1)
+
+    def test_webhook_rejects_wrong_type_amount_and_currency(self):
+        order = self.create_card_order()
+        initiated = self.initiate(order, "validated-webhook-payment")
+        payment_id = initiated.data["public_id"]
+        valid = {
+            "payment_id": str(payment_id),
+            "type": "payment.succeeded",
+            "amount_cents": initiated.data["amount_cents"],
+            "currency": initiated.data["currency"],
+        }
+        invalid_payloads = [
+            {**valid, "event_id": "evt-wrong-type", "type": "payment.failed"},
+            {**valid, "event_id": "evt-wrong-amount", "amount_cents": valid["amount_cents"] + 1},
+            {**valid, "event_id": "evt-wrong-currency", "currency": "USD"},
+        ]
+        for payload in invalid_payloads:
+            with self.subTest(event_id=payload["event_id"]):
+                response = self.signed_webhook(payload)
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        order.refresh_from_db()
+        self.assertEqual(order.payment_status, Order.PaymentStatus.PENDING)
+        self.assertFalse(Shipment.objects.filter(order=order).exists())
 
     def test_delivered_order_accepts_return_request(self):
         order = Order.objects.create(

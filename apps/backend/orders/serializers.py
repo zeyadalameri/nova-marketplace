@@ -1,5 +1,8 @@
+from datetime import timedelta
+
 from django.conf import settings
 from django.db import transaction
+from django.utils import timezone
 from rest_framework import serializers
 
 from accounts.models import Address
@@ -66,6 +69,8 @@ class OrderSerializer(serializers.ModelSerializer):
             "total_cents",
             "coupon_code",
             "invoice_number",
+            "reservation_expires_at",
+            "inventory_released_at",
             "shipment",
             "latest_payment",
             "items",
@@ -184,12 +189,16 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         product_ids = [item.product_id for item in cart_items]
         locked_products = {
             product.id: product
-            for product in Product.objects.select_for_update().filter(id__in=product_ids)
+            for product in Product.objects.select_for_update()
+            .filter(id__in=product_ids)
+            .order_by("id")
         }
         variant_ids = [item.variant_id for item in cart_items if item.variant_id]
         locked_variants = {
             variant.id: variant
-            for variant in ProductVariant.objects.select_for_update().filter(id__in=variant_ids)
+            for variant in ProductVariant.objects.select_for_update()
+            .filter(id__in=variant_ids)
+            .order_by("id")
         }
 
         subtotal_cents = 0
@@ -248,6 +257,12 @@ class OrderCreateSerializer(serializers.ModelSerializer):
                 Order.PaymentStatus.PENDING
                 if validated_data.get("payment_method") == Order.PaymentMethod.CARD
                 else Order.PaymentStatus.UNPAID
+            ),
+            reservation_expires_at=(
+                timezone.now() + timedelta(minutes=settings.PAYMENT_RESERVATION_MINUTES)
+                if validated_data.get("payment_method")
+                in {Order.PaymentMethod.CARD, Order.PaymentMethod.BANK_TRANSFER}
+                else None
             ),
             **validated_data,
         )

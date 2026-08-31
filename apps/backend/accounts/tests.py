@@ -45,6 +45,25 @@ class AccountApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(Address.objects.get().country_code, "SA")
 
+    def test_logout_blacklists_refresh_token_and_is_idempotent(self):
+        self._create_user("logout-user")
+        token_response = self.client.post(
+            reverse("token-obtain-pair"),
+            {"username": "logout-user", "password": "StrongPassword123!"},
+            format="json",
+        )
+        refresh = token_response.data["refresh"]
+
+        first = self.client.post(reverse("logout"), {"refresh": refresh}, format="json")
+        second = self.client.post(reverse("logout"), {"refresh": refresh}, format="json")
+        refresh_attempt = self.client.post(
+            reverse("token-refresh"), {"refresh": refresh}, format="json"
+        )
+
+        self.assertEqual(first.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(second.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(refresh_attempt.status_code, status.HTTP_401_UNAUTHORIZED)
+
     @staticmethod
     def _create_user(username):
         from django.contrib.auth import get_user_model

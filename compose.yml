@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-nova}
       POSTGRES_USER: ${POSTGRES_USER:-nova}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nova-local-password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -18,15 +18,17 @@ services:
     build: ./apps/backend
     restart: unless-stopped
     environment:
-      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-replace-this-before-production}
+      DJANGO_ENV: production
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?DJANGO_SECRET_KEY is required}
       DJANGO_DEBUG: "0"
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,backend}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-nova}:${POSTGRES_PASSWORD:-nova-local-password}@postgres:5432/${POSTGRES_DB:-nova}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-nova}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-nova}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
       CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost:3000}
       PUBLIC_STORE_URL: ${PUBLIC_STORE_URL:-http://localhost:3000}
       PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-sandbox}
-      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-replace-payment-secret}
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:?PAYMENT_WEBHOOK_SECRET is required}
+      PAYMENT_RESERVATION_MINUTES: ${PAYMENT_RESERVATION_MINUTES:-30}
       SHIPPING_PROVIDER: ${SHIPPING_PROVIDER:-sandbox}
       AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-}
       AWS_S3_REGION_NAME: ${AWS_S3_REGION_NAME:-me-south-1}
@@ -73,11 +75,14 @@ services:
     restart: unless-stopped
     command: ["python", "manage.py", "monitor_inventory", "--watch", "--interval", "300"]
     environment:
-      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-replace-this-before-production}
+      DJANGO_ENV: production
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?DJANGO_SECRET_KEY is required}
       DJANGO_DEBUG: "0"
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,backend}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-nova}:${POSTGRES_PASSWORD:-nova-local-password}@postgres:5432/${POSTGRES_DB:-nova}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-nova}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-nova}
       PUBLIC_STORE_URL: ${PUBLIC_STORE_URL:-http://localhost:3000}
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:?PAYMENT_WEBHOOK_SECRET is required}
+      PAYMENT_RESERVATION_MINUTES: ${PAYMENT_RESERVATION_MINUTES:-30}
       INVENTORY_EXPIRY_WARNING_DAYS: ${INVENTORY_EXPIRY_WARNING_DAYS:-30}
       INVENTORY_SLOW_MOVING_DAYS: ${INVENTORY_SLOW_MOVING_DAYS:-60}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

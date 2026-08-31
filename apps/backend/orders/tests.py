@@ -1,16 +1,23 @@
 import uuid
+from datetime import timedelta
+from threading import Barrier, Lock, Thread
+from unittest import skipUnless
 
 from django.contrib.auth import get_user_model
+from django.db import close_old_connections, connection
+from django.test import TransactionTestCase
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APIClient, APITestCase
 
 from carts.models import Cart, CartItem
 from catalog.models import Category, Product
 from accounts.models import Address
-from commerce.models import Coupon, CouponRedemption
+from commerce.models import Coupon, CouponRedemption, Payment
 
 from .models import Order
+from .services import release_expired_reservations
 
 
 class OrderApiTests(APITestCase):
@@ -126,3 +133,135 @@ class OrderApiTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_expired_card_reservation_releases_inventory_once(self):
+        response = self.client.post(
+            reverse("order-list"),
+            {
+                "payment_method": "card",
+                "full_name": "عميل حجز",
+                "phone": "0500000000",
+                "city": "الرياض",
+                "address": "شارع الاختبار",
+            },
+            format="json",
+        )
+        order = Order.objects.get(public_id=response.data["public_id"])
+        payment_response = self.client.post(
+            reverse("order-initiate-payment", args=[order.public_id]),
+            {},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="expiring-reservation-payment",
+        )
+        self.assertEqual(payment_response.status_code, status.HTTP_201_CREATED)
+        Order.objects.filter(pk=order.pk).update(
+            reservation_expires_at=timezone.now() - timedelta(seconds=1)
+        )
+
+        self.assertEqual(release_expired_reservations(), 1)
+        self.assertEqual(release_expired_reservations(), 0)
+
+        order.refresh_from_db()
+        self.product.refresh_from_db()
+        payment = Payment.objects.get(order=order)
+        self.assertEqual(order.status, Order.Status.CANCELLED)
+        self.assertEqual(order.payment_status, Order.PaymentStatus.FAILED)
+        self.assertIsNotNone(order.inventory_released_at)
+        self.assertEqual(payment.status, Payment.Status.FAILED)
+        self.assertEqual(self.product.stock, 3)
+
+    def test_expired_bank_transfer_reservation_releases_inventory_without_payment(self):
+        response = self.client.post(
+            reverse("order-list"),
+            {
+                "payment_method": "bank",
+                "full_name": "عميل تحويل",
+                "phone": "0500000000",
+                "city": "الرياض",
+                "address": "شارع الاختبار",
+            },
+            format="json",
+        )
+        order = Order.objects.get(public_id=response.data["public_id"])
+        self.assertIsNotNone(order.reservation_expires_at)
+        Order.objects.filter(pk=order.pk).update(
+            reservation_expires_at=timezone.now() - timedelta(seconds=1)
+        )
+
+        self.assertEqual(release_expired_reservations(), 1)
+        order.refresh_from_db()
+        self.product.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.CANCELLED)
+        self.assertEqual(order.payment_status, Order.PaymentStatus.FAILED)
+        self.assertEqual(self.product.stock, 3)
+        self.assertFalse(Payment.objects.filter(order=order).exists())
+
+
+@skipUnless(connection.vendor == "postgresql", "Requires PostgreSQL row-level locking")
+class ConcurrentInventoryTests(TransactionTestCase):
+    reset_sequences = True
+
+    def setUp(self):
+        category = Category.objects.create(name="تزامن", slug="concurrent-orders")
+        self.product = Product.objects.create(
+            category=category,
+            name="آخر وحدة",
+            slug="last-unit",
+            sku="LAST-UNIT-1",
+            price_cents=1000,
+            stock=1,
+        )
+        self.users = []
+        for index in range(2):
+            user = get_user_model().objects.create_user(
+                username=f"concurrent-{index}",
+                email=f"concurrent-{index}@example.com",
+                password="password123",
+            )
+            cart = Cart.objects.create(user=user)
+            CartItem.objects.create(cart=cart, product=self.product, quantity=1)
+            self.users.append(user)
+
+    def test_two_concurrent_checkouts_cannot_sell_the_last_unit_twice(self):
+        barrier = Barrier(2)
+        result_lock = Lock()
+        statuses = []
+        errors = []
+
+        def checkout(user_id):
+            close_old_connections()
+            try:
+                user = get_user_model().objects.get(pk=user_id)
+                client = APIClient()
+                client.force_authenticate(user)
+                barrier.wait(timeout=5)
+                response = client.post(
+                    reverse("order-list"),
+                    {
+                        "payment_method": "cod",
+                        "full_name": "عميل متزامن",
+                        "phone": "0500000000",
+                        "city": "الرياض",
+                        "address": "شارع الاختبار",
+                    },
+                    format="json",
+                )
+                with result_lock:
+                    statuses.append(response.status_code)
+            except Exception as exc:  # pragma: no cover - diagnostic path for threaded test
+                with result_lock:
+                    errors.append(exc)
+            finally:
+                close_old_connections()
+
+        threads = [Thread(target=checkout, args=(user.pk,)) for user in self.users]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+
+        self.assertFalse(errors)
+        self.assertEqual(sorted(statuses), [status.HTTP_201_CREATED, status.HTTP_400_BAD_REQUEST])
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock, 0)
+        self.assertEqual(Order.objects.count(), 1)

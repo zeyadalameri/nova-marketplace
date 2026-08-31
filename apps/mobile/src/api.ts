@@ -1,6 +1,8 @@
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
+import { createSingleFlight } from './single-flight';
+
 export type Category = { id: number; name: string; slug: string; description: string };
 export type Variant = { id: number; name: string; sku: string; attributes: Record<string,string>; price_cents: number; display_price_cents: number; display_currency: string; stock: number; is_available: boolean };
 export type Product = { id:number; name:string; slug:string; brand:string; sku:string; description:string; price_cents:number; display_price_cents:number; currency:string; display_currency:string; stock:number; image_url:string; images:{id:number;url:string;alt_text:string}[]; variants:Variant[]; has_variants:boolean; is_available:boolean; average_rating:number; review_count:number; category:Category };
@@ -16,15 +18,30 @@ type Paginated<T> = { count:number; next:string|null; previous:string|null; resu
 const localApiUrl = Platform.select({ android:'http://10.0.2.2:8000/api/v1', ios:'http://127.0.0.1:8000/api/v1', default:'http://127.0.0.1:8000/api/v1' });
 export const API_URL = process.env.EXPO_PUBLIC_API_URL ?? localApiUrl;
 const ACCESS_KEY = 'nova_access_token'; const REFRESH_KEY = 'nova_refresh_token';
+const runRefreshSingleFlight = createSingleFlight<string, string|null>();
+let authEpoch = 0;
 
 async function tokens() { return { access: await SecureStore.getItemAsync(ACCESS_KEY), refresh: await SecureStore.getItemAsync(REFRESH_KEY) }; }
 async function saveTokens(access:string, refresh?:string) { await SecureStore.setItemAsync(ACCESS_KEY,access); if(refresh) await SecureStore.setItemAsync(REFRESH_KEY,refresh); }
-export async function logout() { await Promise.all([SecureStore.deleteItemAsync(ACCESS_KEY),SecureStore.deleteItemAsync(REFRESH_KEY)]); }
+async function clearTokensIfCurrent(expectedRefresh:string|null,epoch=authEpoch){const current=await SecureStore.getItemAsync(REFRESH_KEY);if(authEpoch!==epoch||current!==expectedRefresh)return;await Promise.all([SecureStore.deleteItemAsync(ACCESS_KEY),SecureStore.deleteItemAsync(REFRESH_KEY)]);}
+export async function logout() { const epoch=++authEpoch;const stored=await tokens();try{if(stored.refresh)await fetch(`${API_URL}/auth/logout/`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({refresh:stored.refresh})});}finally{if(authEpoch===epoch)await Promise.all([SecureStore.deleteItemAsync(ACCESS_KEY),SecureStore.deleteItemAsync(REFRESH_KEY)]);} }
 
 export class ApiError extends Error { constructor(public status:number, public payload:unknown){ super(typeof payload==='object'&&payload&&'detail' in payload?String(payload.detail):'تعذر إكمال الطلب'); } }
 export function errorMessage(error:unknown){ if(error instanceof ApiError&&typeof error.payload==='object'&&error.payload)return Object.values(error.payload as Record<string,unknown>).flat().join(' '); return error instanceof Error?error.message:'حدث خطأ غير متوقع'; }
 
-async function refreshAccess(refresh:string){ const response=await fetch(`${API_URL}/auth/token/refresh/`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({refresh})}); if(!response.ok){await logout();return null;} const payload=await response.json() as {access:string;refresh?:string};await saveTokens(payload.access,payload.refresh);return payload.access; }
+async function performRefresh(refresh:string,epoch:number){
+  const response=await fetch(`${API_URL}/auth/token/refresh/`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({refresh})});
+  if(!response.ok){await clearTokensIfCurrent(refresh,epoch);return null;}
+  const payload=await response.json() as {access:string;refresh?:string};
+  const current=await SecureStore.getItemAsync(REFRESH_KEY);
+  if(authEpoch!==epoch||current!==refresh)return null;
+  await saveTokens(payload.access,payload.refresh);
+  return payload.access;
+}
+async function refreshAccess(refresh:string){
+  const epoch=authEpoch;
+  return runRefreshSingleFlight(`${epoch}:${refresh}`,()=>performRefresh(refresh,epoch));
+}
 
 export async function apiRequest<T>(path:string, init?:RequestInit, retry=true):Promise<T>{
   const stored=await tokens(); const headers:Record<string,string>={Accept:'application/json',...(init?.body?{'Content-Type':'application/json'}:{})};
@@ -34,7 +51,7 @@ export async function apiRequest<T>(path:string, init?:RequestInit, retry=true):
   const text=await response.text();const payload=text?JSON.parse(text):null;if(!response.ok)throw new ApiError(response.status,payload);return payload as T;
 }
 
-export async function login(username:string,password:string){const payload=await apiRequest<{access:string;refresh:string}>('/auth/token/',{method:'POST',body:JSON.stringify({username,password})},false);await saveTokens(payload.access,payload.refresh);return getMe();}
+export async function login(username:string,password:string){const epoch=++authEpoch;const payload=await apiRequest<{access:string;refresh:string}>('/auth/token/',{method:'POST',body:JSON.stringify({username,password})},false);if(authEpoch!==epoch)throw new Error('تم إلغاء محاولة تسجيل الدخول.');await saveTokens(payload.access,payload.refresh);return getMe();}
 export async function register(data:Record<string,string>){await apiRequest('/auth/register/',{method:'POST',body:JSON.stringify(data)},false);return login(data.username,data.password);}
 export const getMe=()=>apiRequest<User>('/auth/me/');
 export const getCategories=()=>apiRequest<Category[]>('/categories/');

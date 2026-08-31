@@ -20,7 +20,9 @@ class StoreConfigSerializer(serializers.Serializer):
 class PaymentWebhookSerializer(serializers.Serializer):
     event_id = serializers.CharField()
     payment_id = serializers.UUIDField()
-    type = serializers.CharField(required=False)
+    type = serializers.ChoiceField(choices=["payment.succeeded"])
+    amount_cents = serializers.IntegerField(min_value=0)
+    currency = serializers.CharField(min_length=3, max_length=3)
 
 
 class PaymentWebhookResponseSerializer(serializers.Serializer):

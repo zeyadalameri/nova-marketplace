@@ -103,6 +103,9 @@ class Payment(models.Model):
     class Meta:
         ordering = ["-created_at"]
         indexes = [models.Index(fields=["order", "status"])]
+        constraints = [
+            models.UniqueConstraint(fields=["order"], name="unique_payment_per_order")
+        ]
 
     def __str__(self):
         return f"{self.public_id} - {self.status}"

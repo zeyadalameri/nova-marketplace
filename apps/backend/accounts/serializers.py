@@ -28,6 +28,10 @@ class RegisterSerializer(serializers.ModelSerializer):
         return User.objects.create_user(**validated_data)
 
 
+class LogoutSerializer(serializers.Serializer):
+    refresh = serializers.CharField(max_length=4096)
+
+
 class AddressSerializer(serializers.ModelSerializer):
     class Meta:
         model = Address

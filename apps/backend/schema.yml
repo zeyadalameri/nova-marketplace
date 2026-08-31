@@ -429,6 +429,32 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/auth/logout/:
+    post:
+      operationId: api_v1_auth_logout_create
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Logout'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Logout'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Logout'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Logout'
+          description: ''
   /api/v1/auth/me/:
     get:
       operationId: api_v1_auth_me_retrieve
@@ -1794,11 +1820,17 @@ components:
         name:
           type: string
           maxLength: 100
+        name_en:
+          type: string
+          maxLength: 100
         slug:
           type: string
           maxLength: 120
           pattern: ^[-a-zA-Z0-9_]+$
         description:
+          type: string
+          maxLength: 220
+        description_en:
           type: string
           maxLength: 220
         image_url:
@@ -2198,6 +2230,14 @@ components:
         * `adjustment` - تسوية
         * `return` - مرتجع
         * `expired` - إتلاف منتهي
+    Logout:
+      type: object
+      properties:
+        refresh:
+          type: string
+          maxLength: 4096
+      required:
+      - refresh
     Notification:
       type: object
       properties:
@@ -2304,6 +2344,14 @@ components:
           type: string
           nullable: true
           maxLength: 40
+        reservation_expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        inventory_released_at:
+          type: string
+          format: date-time
+          nullable: true
         shipment:
           type: object
           additionalProperties: {}
@@ -2341,6 +2389,10 @@ components:
     OrderCreate:
       type: object
       properties:
+        idempotency_key:
+          type: string
+          writeOnly: true
+          maxLength: 120
         payment_method:
           $ref: '#/components/schemas/PaymentMethodEnum'
         address_id:
@@ -2976,10 +3028,20 @@ components:
           type: string
           format: uuid
         type:
+          $ref: '#/components/schemas/TypeEnum'
+        amount_cents:
+          type: integer
+          minimum: 0
+        currency:
           type: string
+          maxLength: 3
+          minLength: 3
       required:
+      - amount_cents
+      - currency
       - event_id
       - payment_id
+      - type
     PaymentWebhookResponse:
       type: object
       properties:
@@ -3012,6 +3074,9 @@ components:
         name:
           type: string
           maxLength: 150
+        name_en:
+          type: string
+          maxLength: 150
         slug:
           type: string
           maxLength: 180
@@ -3023,6 +3088,8 @@ components:
           type: string
           maxLength: 60
         description:
+          type: string
+        description_en:
           type: string
         price_cents:
           type: integer
@@ -3132,6 +3199,9 @@ components:
           type: integer
           readOnly: true
         name:
+          type: string
+          maxLength: 120
+        name_en:
           type: string
           maxLength: 120
         sku:
@@ -3456,6 +3526,11 @@ components:
       required:
       - access
       - refresh
+    TypeEnum:
+      enum:
+      - payment.succeeded
+      type: string
+      description: '* `payment.succeeded` - payment.succeeded'
     User:
       type: object
       properties:

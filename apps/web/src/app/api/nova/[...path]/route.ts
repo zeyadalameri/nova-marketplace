@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { DJANGO_API_URL, djangoFetch, setTokenCookies } from "@/lib/server-auth";
+import { DJANGO_API_URL, refreshTokenPair, setTokenCookies } from "@/lib/server-auth";
 
 type RouteContext = { params: Promise<{ path: string[] }> };
 
@@ -25,13 +25,8 @@ async function proxy(request: NextRequest, context: RouteContext) {
     let upstream = await fetch(target, { method, headers: buildHeaders(access), body, cache: "no-store" });
     let refreshed: { access: string; refresh?: string } | null = null;
     if (upstream.status === 401 && request.cookies.get("nova_refresh")?.value) {
-      const refreshResponse = await djangoFetch("/auth/token/refresh/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh: request.cookies.get("nova_refresh")!.value }),
-      });
-      if (refreshResponse.ok) {
-        refreshed = await refreshResponse.json();
+      refreshed = await refreshTokenPair(request.cookies.get("nova_refresh")!.value);
+      if (refreshed) {
         access = refreshed!.access;
         upstream = await fetch(target, {
           method,

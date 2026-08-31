@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import json
 import secrets
 from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
@@ -96,12 +97,33 @@ def ensure_shipment(order):
     return shipment
 
 
+@transaction.atomic
 def initiate_payment(order, idempotency_key: str):
-    existing = Payment.objects.filter(idempotency_key=idempotency_key).first()
-    if existing:
-        if existing.order_id != order.id:
+    order = type(order).objects.select_for_update().get(pk=order.pk)
+    if order.status == order.Status.CANCELLED:
+        raise serializers.ValidationError({"order": "لا يمكن دفع طلب ملغي."})
+    if order.payment_status == order.PaymentStatus.PAID:
+        raise serializers.ValidationError({"order": "تم دفع الطلب بالفعل."})
+    if order.payment_status == order.PaymentStatus.REFUNDED:
+        raise serializers.ValidationError({"order": "تم استرجاع دفعة هذا الطلب."})
+    if order.status != order.Status.PENDING or order.payment_status != order.PaymentStatus.PENDING:
+        raise serializers.ValidationError({"order": "حالة الطلب لا تسمح ببدء الدفع."})
+    if order.reservation_expires_at and order.reservation_expires_at <= timezone.now():
+        raise serializers.ValidationError({"order": "انتهت مهلة حجز المخزون لهذا الطلب."})
+
+    existing_for_order = Payment.objects.select_for_update().filter(order=order).first()
+    if existing_for_order:
+        if existing_for_order.status in {Payment.Status.CREATED, Payment.Status.PENDING}:
+            return existing_for_order
+        if existing_for_order.status == Payment.Status.PAID:
+            raise serializers.ValidationError({"order": "تم دفع الطلب بالفعل."})
+        raise serializers.ValidationError({"order": "لا يمكن إنشاء دفعة جديدة لهذا الطلب."})
+
+    existing_key = Payment.objects.select_for_update().filter(idempotency_key=idempotency_key).first()
+    if existing_key:
+        if existing_key.order_id != order.id:
             raise serializers.ValidationError({"idempotency_key": "المفتاح مستخدم لطلب آخر."})
-        return existing
+        return existing_key
     return Payment.objects.create(
         order=order,
         provider=settings.PAYMENT_PROVIDER,
@@ -116,22 +138,55 @@ def initiate_payment(order, idempotency_key: str):
 
 @transaction.atomic
 def complete_payment(payment: Payment, *, event_id: str, payload: dict):
+    order_model = payment._meta.get_field("order").remote_field.model
+    order = order_model.objects.select_for_update().select_related("user").get(
+        pk=payment.order_id
+    )
+    payment = Payment.objects.select_for_update().get(pk=payment.pk)
+
+    if payload.get("type") != "payment.succeeded":
+        raise serializers.ValidationError({"type": "نوع حدث الدفع غير مدعوم."})
+    if str(payload.get("payment_id", "")) != str(payment.public_id):
+        raise serializers.ValidationError({"payment_id": "معرف الدفعة لا يطابق الدفعة المطلوبة."})
+    if payload.get("amount_cents") != payment.amount_cents or payment.amount_cents != order.total_cents:
+        raise serializers.ValidationError({"amount_cents": "مبلغ الدفعة لا يطابق إجمالي الطلب."})
+    if str(payload.get("currency", "")).upper() != payment.currency.upper() or (
+        payment.currency.upper() != order.currency.upper()
+    ):
+        raise serializers.ValidationError({"currency": "عملة الدفعة لا تطابق عملة الطلب."})
+
+    payload_hash = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()
+    ).hexdigest()
     event, created = WebhookEvent.objects.get_or_create(
         provider=payment.provider,
         event_id=event_id,
-        defaults={"payload_hash": hashlib.sha256(repr(payload).encode()).hexdigest()},
+        defaults={"payload_hash": payload_hash},
     )
+    if not created and event.payload_hash != payload_hash:
+        raise serializers.ValidationError({"event_id": "معرف الحدث مستخدم لبيانات مختلفة."})
     if not created and event.status == "processed":
         return payment, False
 
-    payment = Payment.objects.select_for_update().select_related("order", "order__user").get(pk=payment.pk)
-    if payment.status == Payment.Status.PAID:
+    if payment.status == Payment.Status.PAID and order.payment_status == order.PaymentStatus.PAID:
         event.status = "processed"
         event.processed_at = timezone.now()
         event.save(update_fields=["status", "processed_at"])
         return payment, False
 
-    order = payment.order
+    if order.status == order.Status.CANCELLED:
+        raise serializers.ValidationError({"order": "لا يمكن دفع طلب ملغي."})
+    if order.payment_status == order.PaymentStatus.PAID or payment.status == Payment.Status.PAID:
+        raise serializers.ValidationError({"order": "تم دفع الطلب بالفعل."})
+    if order.payment_status == order.PaymentStatus.REFUNDED or payment.status == Payment.Status.REFUNDED:
+        raise serializers.ValidationError({"order": "تم استرجاع دفعة هذا الطلب."})
+    if payment.status not in {Payment.Status.CREATED, Payment.Status.PENDING}:
+        raise serializers.ValidationError({"payment": "حالة الدفعة لا تسمح بإكمالها."})
+    if order.status != order.Status.PENDING or order.payment_status != order.PaymentStatus.PENDING:
+        raise serializers.ValidationError({"order": "حالة الطلب لا تسمح بإكمال الدفع."})
+    if order.reservation_expires_at and order.reservation_expires_at <= timezone.now():
+        raise serializers.ValidationError({"order": "انتهت مهلة حجز المخزون لهذا الطلب."})
+
     payment.status = Payment.Status.PAID
     payment.raw_response = payload
     payment.save(update_fields=["status", "raw_response", "updated_at"])

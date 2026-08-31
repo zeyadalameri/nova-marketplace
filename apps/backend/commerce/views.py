@@ -1,4 +1,3 @@
-import json
 import uuid
 
 from django.conf import settings
@@ -20,6 +19,7 @@ from .serializers import (
     StoreConfigSerializer,
 )
 from .services import complete_payment, verify_webhook_signature
+from orders.services import release_expired_order
 
 
 class StoreConfigView(generics.GenericAPIView):
@@ -68,10 +68,20 @@ class PaymentViewSet(viewsets.ReadOnlyModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         payment = self.get_object()
+        if release_expired_order(payment.order_id):
+            return Response(
+                {"detail": "انتهت مهلة حجز المخزون وأُلغي الطلب."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         payment, _ = complete_payment(
             payment,
             event_id=f"manual-{uuid.uuid4()}",
-            payload={"type": "payment.succeeded", "payment_id": str(payment.public_id)},
+            payload={
+                "type": "payment.succeeded",
+                "payment_id": str(payment.public_id),
+                "amount_cents": payment.amount_cents,
+                "currency": payment.currency,
+            },
         )
         return Response(PaymentSerializer(payment).data)
 
@@ -86,12 +96,22 @@ class PaymentWebhookView(generics.GenericAPIView):
         signature = request.headers.get("X-Nova-Signature", "")
         if not verify_webhook_signature(request.body, signature):
             return Response({"detail": "توقيع Webhook غير صالح."}, status=status.HTTP_401_UNAUTHORIZED)
-        try:
-            payload = json.loads(request.body.decode("utf-8"))
-            payment = Payment.objects.get(public_id=payload["payment_id"])
-            event_id = str(payload["event_id"])
-        except (ValueError, KeyError, Payment.DoesNotExist):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
             return Response({"detail": "بيانات Webhook غير صالحة."}, status=status.HTTP_400_BAD_REQUEST)
+        payload = dict(serializer.validated_data)
+        payload["payment_id"] = str(payload["payment_id"])
+        payload["currency"] = payload["currency"].upper()
+        try:
+            payment = Payment.objects.get(public_id=payload["payment_id"])
+        except Payment.DoesNotExist:
+            return Response({"detail": "بيانات Webhook غير صالحة."}, status=status.HTTP_400_BAD_REQUEST)
+        if release_expired_order(payment.order_id):
+            return Response(
+                {"detail": "انتهت مهلة حجز المخزون وأُلغي الطلب."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        event_id = str(payload["event_id"])
         payment, processed = complete_payment(payment, event_id=event_id, payload=payload)
         return Response({"received": True, "processed": processed, "status": payment.status})
 

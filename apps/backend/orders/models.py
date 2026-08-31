@@ -59,6 +59,8 @@ class Order(models.Model):
     total_cents = models.PositiveBigIntegerField(default=0)
     coupon_code = models.CharField(max_length=40, blank=True)
     invoice_number = models.CharField(max_length=40, unique=True, null=True, blank=True)
+    reservation_expires_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    inventory_released_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
